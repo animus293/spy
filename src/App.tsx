@@ -282,8 +282,8 @@ export default function App() {
               <span>Identity Verification Required</span>
             </button>
             {authError && (
-              <p className="text-[9px] text-rose-500/60 font-mono text-center max-w-xs">
-                Authentication error. Please ensure Google Auth is enabled in Console.
+              <p className="text-[9px] text-rose-500/60 font-mono text-center max-w-xs uppercase tracking-widest leading-relaxed">
+                Security Alert: {authError}
               </p>
             )}
           </motion.div>
