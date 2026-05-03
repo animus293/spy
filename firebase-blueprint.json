@@ -1,0 +1,57 @@
+{
+  "entities": {
+    "Session": {
+      "title": "Session",
+      "description": "WebRTC signaling session",
+      "type": "object",
+      "properties": {
+        "hostId": { "type": "string" },
+        "status": { "type": "string", "enum": ["waiting", "connected", "closed"] },
+        "offer": { "type": "object" },
+        "answer": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["hostId", "status", "createdAt"]
+    },
+    "Command": {
+      "title": "Command",
+      "description": "Remote control command",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["capture", "ping"] },
+        "payload": { "type": "object" },
+        "processed": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "processed", "createdAt"]
+    },
+    "UserMetadata": {
+      "title": "User Metadata",
+      "description": "Information about a device/user",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string", "enum": ["streamer", "viewer"] },
+        "lastSeen": { "type": "string", "format": "date-time" },
+        "isOnline": { "type": "boolean" }
+      }
+    }
+  },
+  "firestore": {
+    "sessions/{sessionId}": {
+      "schema": "Session",
+      "description": "WebRTC signaling channel"
+    },
+    "sessions/{sessionId}/iceCandidates/{candidateId}": {
+      "schema": "object",
+      "description": "WebRTC ICE candidates"
+    },
+    "commands/{commandId}": {
+      "schema": "Command",
+      "description": "Remote commands for the streamer"
+    },
+    "users/{userId}": {
+      "schema": "UserMetadata",
+      "description": "User profile and status"
+    }
+  }
+}

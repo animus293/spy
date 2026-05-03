@@ -1,0 +1,13 @@
+{
+  "name": "SecureVision Stealth",
+  "description": "A high-performance surveillance application with disguise UI (Clock/Calculator), live WebRTC streaming, and remote triggering capabilities.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "surveillance",
+    "live-streaming",
+    "remote-control"
+  ]
+}

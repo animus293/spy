@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-bg: #020617;
+  --color-brand-border: #1e293b;
+  --color-brand-emerald: #10b981;
+}
+
+@layer utilities {
+  .bg-grid-pattern {
+    background-image: radial-gradient(#fff 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+}
