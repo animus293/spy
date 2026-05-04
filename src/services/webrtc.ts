@@ -1,33 +1,13 @@
-import { auth, db } from './firebase';
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  addDoc, 
-  onSnapshot, 
-  updateDoc, 
-  getDoc,
-  query,
-  where,
-  serverTimestamp,
-  type DocumentData
-} from 'firebase/firestore';
-
-export type SignalingSession = {
-  id: string;
-  hostId: string;
-  status: 'waiting' | 'connected' | 'closed';
-  offer?: RTCSessionDescriptionInit;
-  answer?: RTCSessionDescriptionInit;
-  createdAt: any;
-};
+import { io, Socket } from "socket.io-client";
 
 export class WebRTCService {
   private pc: RTCPeerConnection;
   private localStream: MediaStream | null = null;
-  private sessionId: string | null = null;
+  private socket: Socket;
+  private roomId: string | null = null;
 
   constructor() {
+    this.socket = io();
     this.pc = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -36,45 +16,40 @@ export class WebRTCService {
     });
   }
 
-  async startStream(stream: MediaStream): Promise<string> {
+  async startStream(stream: MediaStream, roomId: string): Promise<void> {
     this.localStream = stream;
+    this.roomId = roomId;
+    
     stream.getTracks().forEach(track => this.pc.addTrack(track, stream));
 
-    const sessionRef = await addDoc(collection(db, 'sessions'), {
-      hostId: auth.currentUser?.uid,
-      status: 'waiting',
-      createdAt: serverTimestamp(),
-    });
-
-    this.sessionId = sessionRef.id;
+    this.socket.emit("join", roomId);
 
     this.pc.onicecandidate = (event) => {
       if (event.candidate) {
-        addDoc(collection(db, `sessions/${this.sessionId}/iceCandidates`), event.candidate.toJSON());
+        this.socket.emit("signal", { roomId, data: { type: 'candidate', candidate: event.candidate } });
       }
     };
 
-    const offer = await this.pc.createOffer();
-    await this.pc.setLocalDescription(offer);
-
-    await setDoc(doc(db, 'sessions', this.sessionId), {
-      offer: { type: offer.type, sdp: offer.sdp },
-    }, { merge: true });
-
-    // Listen for answer
-    onSnapshot(doc(db, 'sessions', this.sessionId), async (snapshot) => {
-      const data = snapshot.data();
-      if (data?.answer && !this.pc.currentRemoteDescription) {
-        const answer = new RTCSessionDescription(data.answer);
-        await this.pc.setRemoteDescription(answer);
+    // Listen for viewer signals
+    this.socket.on("signal", async ({ data }) => {
+      if (data.type === 'answer') {
+        await this.pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+      } else if (data.type === 'candidate' && this.pc.remoteDescription) {
+        await this.pc.addIceCandidate(new RTCIceCandidate(data.candidate));
       }
     });
 
-    return this.sessionId;
+    // When a viewer joins, send an offer
+    this.socket.on("user-joined", async () => {
+      const offer = await this.pc.createOffer();
+      await this.pc.setLocalDescription(offer);
+      this.socket.emit("signal", { roomId, data: { type: 'offer', offer } });
+    });
   }
 
-  async joinStream(sessionId: string, onRemoteStream: (stream: MediaStream) => void) {
-    this.sessionId = sessionId;
+  async joinStream(roomId: string, onRemoteStream: (stream: MediaStream) => void) {
+    this.roomId = roomId;
+    this.socket.emit("join", roomId);
 
     this.pc.ontrack = (event) => {
       onRemoteStream(event.streams[0]);
@@ -82,34 +57,32 @@ export class WebRTCService {
 
     this.pc.onicecandidate = (event) => {
       if (event.candidate) {
-        addDoc(collection(db, `sessions/${this.sessionId}/iceCandidates`), event.candidate.toJSON());
+        this.socket.emit("signal", { roomId, data: { type: 'candidate', candidate: event.candidate } });
       }
     };
 
-    const sessionRef = doc(db, 'sessions', sessionId);
-    const sessionSnap = await getDoc(sessionRef);
-    const data = sessionSnap.data();
-
-    if (!data?.offer) throw new Error('No offer found');
-
-    await this.pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-    const answer = await this.pc.createAnswer();
-    await this.pc.setLocalDescription(answer);
-
-    await updateDoc(sessionRef, {
-      answer: { type: answer.type, sdp: answer.sdp },
-      status: 'connected',
+    this.socket.on("signal", async ({ data }) => {
+      if (data.type === 'offer') {
+        await this.pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+        const answer = await this.pc.createAnswer();
+        await this.pc.setLocalDescription(answer);
+        this.socket.emit("signal", { roomId, data: { type: 'answer', answer } });
+      } else if (data.type === 'candidate') {
+        await this.pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+      }
     });
+  }
 
-    // Listen for ICE candidates
-    onSnapshot(collection(db, `sessions/${this.sessionId}/iceCandidates`), (snapshot) => {
-      snapshot.docChanges().forEach(async (change) => {
-        if (change.type === 'added') {
-          const candidate = new RTCIceCandidate(change.doc.data());
-          await this.pc.addIceCandidate(candidate);
-        }
-      });
+  onRemoteTrigger(callback: (command: any) => void) {
+    this.socket.on("trigger", ({ command }) => {
+      callback(command);
     });
+  }
+
+  sendTrigger(command: any) {
+    if (this.roomId) {
+      this.socket.emit("trigger", { roomId: this.roomId, command });
+    }
   }
 
   async captureFrame(videoElement: HTMLVideoElement): Promise<string> {
@@ -124,5 +97,6 @@ export class WebRTCService {
   dispose() {
     this.localStream?.getTracks().forEach(t => t.stop());
     this.pc.close();
+    this.socket.disconnect();
   }
 }
